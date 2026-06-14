@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Imposit — 2-up PDF tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<style>
+  :root{
+    --paper:#ECEAE3;
+    --sheet:#FCFBF8;
+    --ink:#18181B;
+    --muted:#6B6A63;
+    --hair:#D6D3C9;
+    --red:#D6432B;
+    --redink:#B33620;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Inter",system-ui,-apple-system,sans-serif;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    padding:28px 20px 80px;
+  }
+  .wrap{max-width:780px;margin:0 auto;}
+
+  .eyebrow{
+    font-family:"Space Mono",ui-monospace,monospace;
+    font-size:12px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--redink);
+    display:flex;align-items:center;gap:10px;margin-bottom:18px;
+  }
+  .eyebrow .tgt{flex:none;}
+  h1{
+    font-family:"Space Grotesk",sans-serif;
+    font-weight:700;
+    font-size:clamp(34px,8vw,56px);
+    line-height:1.02;letter-spacing:-.02em;margin:0 0 14px;
+  }
+  h1 em{font-style:normal;color:var(--red);}
+  .lede{font-size:16px;color:var(--muted);max-width:46ch;margin:0 0 30px;}
+
+  /* drop zone */
+  .drop{
+    position:relative;border:1.5px dashed var(--hair);
+    background:var(--sheet);border-radius:4px;
+    padding:34px 22px;text-align:center;cursor:pointer;
+    transition:border-color .18s ease, background .18s ease, transform .18s ease;
+  }
+  .drop:hover,.drop:focus-visible{border-color:var(--red);outline:none;}
+  .drop.drag{border-color:var(--red);background:#fff;transform:scale(1.005);}
+  .drop.loaded{border-style:solid;border-color:var(--hair);text-align:left;cursor:default;}
+  .drop .big{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:18px;}
+  .drop .small{font-family:"Space Mono",monospace;font-size:12px;color:var(--muted);margin-top:8px;letter-spacing:.02em;}
+  .filerow{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+  .fileicon{width:34px;height:44px;flex:none;}
+  .filemeta .name{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:16px;word-break:break-all;}
+  .filemeta .stat{font-family:"Space Mono",monospace;font-size:12px;color:var(--muted);margin-top:3px;}
+  .swap-btn{
+    margin-left:auto;font-family:"Space Mono",monospace;font-size:12px;
+    background:none;border:1px solid var(--hair);color:var(--ink);
+    padding:7px 12px;border-radius:3px;cursor:pointer;letter-spacing:.04em;
+  }
+  .swap-btn:hover{border-color:var(--red);color:var(--redink);}
+
+  /* config grid */
+  .panel{margin-top:30px;display:grid;grid-template-columns:1fr 280px;gap:28px;align-items:start;}
+  @media(max-width:640px){.panel{grid-template-columns:1fr;}}
+
+  .field{margin-bottom:22px;}
+  .field > label{
+    display:block;font-family:"Space Mono",monospace;font-size:11px;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:9px;
+  }
+  .seg{display:inline-flex;border:1px solid var(--hair);border-radius:3px;overflow:hidden;background:var(--sheet);flex-wrap:wrap;}
+  .seg button{
+    font-family:"Inter",sans-serif;font-size:14px;font-weight:500;
+    border:none;background:none;color:var(--ink);padding:9px 15px;cursor:pointer;
+    border-right:1px solid var(--hair);transition:background .15s,color .15s;
+  }
+  .seg button:last-child{border-right:none;}
+  .seg button[aria-pressed="true"]{background:var(--ink);color:var(--sheet);}
+  .seg button:not([aria-pressed="true"]):hover{background:#fff;color:var(--redink);}
+
+  /* preview */
+  .preview{
+    background:var(--sheet);border:1px solid var(--hair);border-radius:4px;
+    padding:20px 18px 14px;
+  }
+  .preview .ptitle{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;}
+  .preview svg{width:100%;height:auto;display:block;}
+  .pcap{font-family:"Space Mono",monospace;font-size:11px;color:var(--muted);margin-top:12px;text-align:center;}
+
+  /* action */
+  .go{
+    margin-top:14px;width:100%;
+    font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:17px;
+    background:var(--red);color:#fff;border:none;border-radius:4px;
+    padding:16px;cursor:pointer;letter-spacing:.01em;
+    transition:background .16s ease, transform .08s ease;
+  }
+  .go:hover:not(:disabled){background:var(--redink);}
+  .go:active:not(:disabled){transform:translateY(1px);}
+  .go:disabled{background:var(--hair);color:#fff;cursor:not-allowed;}
+
+  /* result */
+  .result{
+    margin-top:22px;border:1px solid var(--hair);border-left:3px solid var(--red);
+    background:var(--sheet);border-radius:4px;padding:20px 22px;
+    display:none;
+  }
+  .result.show{display:block;animation:rise .3s ease;}
+  @keyframes rise{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+  .result .rstat{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:20px;margin-bottom:4px;}
+  .result .rsub{font-family:"Space Mono",monospace;font-size:12px;color:var(--muted);margin-bottom:16px;}
+  .dl{
+    display:inline-flex;align-items:center;gap:9px;text-decoration:none;
+    font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:15px;
+    background:var(--ink);color:var(--sheet);padding:12px 18px;border-radius:3px;
+  }
+  .dl:hover{background:#000;}
+  .err{color:var(--redink);font-family:"Space Mono",monospace;font-size:13px;margin-top:14px;}
+  .hidden{display:none;}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="eyebrow">
+    <svg class="tgt" width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="3.2" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="7" y1="0" x2="7" y2="4" stroke="currentColor" stroke-width="1.2"/><line x1="7" y1="10" x2="7" y2="14" stroke="currentColor" stroke-width="1.2"/><line x1="0" y1="7" x2="4" y2="7" stroke="currentColor" stroke-width="1.2"/><line x1="10" y1="7" x2="14" y2="7" stroke="currentColor" stroke-width="1.2"/></svg>
+    PDF Imposition · runs in your browser
+  </div>
+
+  <h1>Two pages,<br><em>one sheet.</em></h1>
+  <p class="lede">Drop in a PDF and lay two pages onto every sheet — for handouts, double-sided printing, and saving paper. Nothing leaves this page.</p>
+
+  <!-- DROP ZONE -->
+  <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a PDF file">
+    <div id="dropEmpty">
+      <div class="big">Drop a PDF here</div>
+      <div class="small">or tap to choose a file</div>
+    </div>
+    <div id="dropLoaded" class="hidden">
+      <div class="filerow">
+        <svg class="fileicon" viewBox="0 0 34 44"><rect x="1" y="1" width="32" height="42" rx="2" fill="#fff" stroke="#D6D3C9"/><path d="M23 1v9h9" fill="none" stroke="#D6D3C9"/><text x="17" y="32" text-anchor="middle" font-family="Space Mono, monospace" font-size="8" fill="#D6432B" font-weight="700">PDF</text></svg>
+        <div class="filemeta">
+          <div class="name" id="fName">document.pdf</div>
+          <div class="stat" id="fStat">— pages</div>
+        </div>
+        <button class="swap-btn" id="swapBtn" type="button">Change</button>
+      </div>
+    </div>
+    <input type="file" id="fileInput" accept="application/pdf,.pdf" style="display:none" />
+  </div>
+
+  <!-- CONFIG -->
+  <div class="panel">
+    <div>
+      <div class="field">
+        <label>Layout</label>
+        <div class="seg" id="segLayout">
+          <button data-v="side" aria-pressed="true">Side by side</button>
+          <button data-v="stack" aria-pressed="false">Stacked</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Sheet size</label>
+        <div class="seg" id="segSize">
+          <button data-v="auto" aria-pressed="true">Match source</button>
+          <button data-v="a4" aria-pressed="false">A4</button>
+          <button data-v="letter" aria-pressed="false">Letter</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Spacing</label>
+        <div class="seg" id="segGap">
+          <button data-v="0" aria-pressed="true">None</button>
+          <button data-v="1" aria-pressed="false">Thin</button>
+          <button data-v="2" aria-pressed="false">Medium</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="preview">
+      <div class="ptitle">Output sheet</div>
+      <svg id="previewSvg" viewBox="0 0 240 200" aria-hidden="true"></svg>
+      <div class="pcap" id="previewCap">side by side · match source</div>
+    </div>
+  </div>
+
+  <button class="go" id="goBtn" disabled>Add a PDF to start</button>
+
+  <!-- RESULT -->
+  <div class="result" id="result">
+    <div class="rstat" id="rStat">Done</div>
+    <div class="rsub" id="rSub"></div>
+    <a class="dl" id="dlLink" download>
+      <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1v9M4 7l4 4 4-4M2 14h12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Download 2-up PDF
+    </a>
+    <div class="err hidden" id="errBox"></div>
+  </div>
+
+</div>
+
+<script>
+const { PDFDocument } = PDFLib;
+
+const state = {
+  bytes: null,
+  name: null,
+  pageCount: 0,
+  srcW: 595, srcH: 842,
+  layout: "side",   // side | stack
+  size: "auto",     // auto | a4 | letter
+  gap: 0,           // 0 | 1 | 2
+};
+
+const A4 = [595.28, 841.89];      // [short, long] portrait points
+const LETTER = [612, 792];
+const GAP_PT = [0, 14, 28];        // outer margin + inner gutter per level
+
+// ---------- elements ----------
+const drop = document.getElementById("drop");
+const fileInput = document.getElementById("fileInput");
+const dropEmpty = document.getElementById("dropEmpty");
+const dropLoaded = document.getElementById("dropLoaded");
+const fName = document.getElementById("fName");
+const fStat = document.getElementById("fStat");
+const swapBtn = document.getElementById("swapBtn");
+const goBtn = document.getElementById("goBtn");
+const result = document.getElementById("result");
+const rStat = document.getElementById("rStat");
+const rSub = document.getElementById("rSub");
+const dlLink = document.getElementById("dlLink");
+const errBox = document.getElementById("errBox");
+const previewCap = document.getElementById("previewCap");
+
+// ---------- segmented controls ----------
+function wireSeg(id, key, after){
+  const seg = document.getElementById(id);
+  seg.addEventListener("click", e=>{
+    const b = e.target.closest("button"); if(!b) return;
+    [...seg.children].forEach(x=>x.setAttribute("aria-pressed", x===b?"true":"false"));
+    state[key] = b.dataset.v === "0" || b.dataset.v === "1" || b.dataset.v === "2" ? Number(b.dataset.v) : b.dataset.v;
+    drawPreview(); if(after) after();
+  });
+}
+wireSeg("segLayout","layout");
+wireSeg("segSize","size");
+wireSeg("segGap","gap");
+
+// ---------- file handling ----------
+drop.addEventListener("click", e=>{ if(!drop.classList.contains("loaded")) fileInput.click(); });
+drop.addEventListener("keydown", e=>{ if((e.key==="Enter"||e.key===" ") && !drop.classList.contains("loaded")){e.preventDefault();fileInput.click();}});
+swapBtn.addEventListener("click", e=>{ e.stopPropagation(); fileInput.click(); });
+fileInput.addEventListener("change", e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); });
+
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));
+drop.addEventListener("drop", e=>{ const f=e.dataTransfer.files[0]; if(f) loadFile(f); });
+
+async function loadFile(file){
+  hideError(); result.classList.remove("show");
+  if(file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")){
+    showLoadError("That isn't a PDF. Choose a .pdf file."); return;
+  }
+  try{
+    const buf = await file.arrayBuffer();
+    const doc = await PDFDocument.load(buf, { ignoreEncryption:true });
+    const first = doc.getPage(0);
+    state.bytes = buf;
+    state.name = file.name.replace(/\.pdf$/i,"");
+    state.pageCount = doc.getPageCount();
+    state.srcW = first.getWidth();
+    state.srcH = first.getHeight();
+    dropEmpty.classList.add("hidden");
+    dropLoaded.classList.remove("hidden");
+    drop.classList.add("loaded");
+    fName.textContent = file.name;
+    const sheets = Math.ceil(state.pageCount/2);
+    fStat.textContent = `${state.pageCount} pages · ${Math.round(state.srcW)}×${Math.round(state.srcH)} pt · → ${sheets} sheets`;
+    goBtn.disabled = false;
+    goBtn.textContent = "Generate 2-up PDF";
+    drawPreview();
+  }catch(err){
+    showLoadError("Couldn't open that PDF. It may be corrupted or password-protected.");
+  }
+}
+function showLoadError(msg){
+  dropEmpty.classList.remove("hidden"); dropLoaded.classList.add("hidden");
+  drop.classList.remove("loaded"); goBtn.disabled = true; goBtn.textContent = "Add a PDF to start";
+  state.bytes = null;
+  result.classList.add("show"); rStat.textContent = "Hmm."; rSub.textContent = "";
+  showError(msg);
+}
+
+// ---------- preview diagram ----------
+function drawPreview(){
+  const svg = document.getElementById("previewSvg");
+  const pageAR = state.srcH>0 ? state.srcW/state.srcH : 0.707; // w/h
+  const sb = state.layout === "side";
+  // sheet aspect ratio (w/h)
+  let sheetAR = sb ? (pageAR*2) : (pageAR/2);
+  // clamp to viewbox
+  const VB=240, pad=22;
+  let w, h;
+  if(sheetAR >= 1){ w = VB-2*pad; h = w/sheetAR; }
+  else { h = 200-2*pad; w = h*sheetAR; }
+  const x0 = (VB - w)/2, y0 = (200 - h)/2;
+  const m = state.gap===0?2:(state.gap===1?5:9); // visual margin
+  const innerX=x0+m, innerY=y0+m, innerW=w-2*m, innerH=h-2*m;
+
+  let slots="";
+  function slot(sx,sy,sw,sh,label){
+    return `<rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" fill="#fff" stroke="#D6D3C9" stroke-width="1"/>
+      <text x="${sx+sw/2}" y="${sy+sh/2+5}" text-anchor="middle" font-family="Space Mono, monospace" font-size="15" fill="#D6432B" font-weight="700">${label}</text>`;
+  }
+  if(sb){
+    const g=m, sw=(innerW-g)/2;
+    slots = slot(innerX,innerY,sw,innerH,"1") + slot(innerX+sw+g,innerY,sw,innerH,"2");
+  }else{
+    const g=m, sh=(innerH-g)/2;
+    slots = slot(innerX,innerY,innerW,sh,"1") + slot(innerX,innerY+sh+g,innerW,sh,"2");
+  }
+  const cross = (cx,cy)=>`<g stroke="#D6432B" stroke-width="1"><line x1="${cx-4}" y1="${cy}" x2="${cx+4}" y2="${cy}"/><line x1="${cx}" y1="${cy-4}" x2="${cx}" y2="${cy+4}"/></g>`;
+  svg.innerHTML =
+    `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="#FCFBF8" stroke="#18181B" stroke-width="1.4"/>`+
+    slots +
+    cross(x0,y0)+cross(x0+w,y0)+cross(x0,y0+h)+cross(x0+w,y0+h);
+
+  const sizeName = state.size==="auto"?"match source":state.size.toUpperCase();
+  previewCap.textContent = `${sb?"side by side":"stacked"} · ${sizeName}`;
+}
+drawPreview();
+
+// ---------- generate ----------
+goBtn.addEventListener("click", generate);
+
+function sheetDims(pw, ph){
+  // returns [sheetW, sheetH] for the chosen size + layout
+  const sb = state.layout==="side";
+  if(state.size==="auto"){
+    const m = GAP_PT[state.gap];
+    return sb
+      ? [pw*2 + m*3, ph + m*2]      // margin both sides + gutter
+      : [pw + m*2, ph*2 + m*3];
+  }
+  const base = state.size==="a4"?A4:LETTER;
+  return sb ? [base[1], base[0]] : [base[0], base[1]]; // landscape vs portrait
+}
+
+async function generate(){
+  if(!state.bytes) return;
+  hideError();
+  goBtn.disabled = true; goBtn.textContent = "Working…";
+  result.classList.remove("show");
+  await new Promise(r=>setTimeout(r,30)); // let UI paint
+
+  try{
+    const src = await PDFDocument.load(state.bytes, { ignoreEncryption:true });
+    const out = await PDFDocument.create();
+    const n = src.getPageCount();
+    const indices = [...Array(n).keys()];
+    const embedded = await out.embedPdf(src, indices);
+    const m = state.size==="auto" ? GAP_PT[state.gap] : (state.gap===0?0:(state.gap===1?14:28));
+
+    for(let i=0;i<n;i+=2){
+      const a = embedded[i];
+      const b = embedded[i+1] || null;
+      const pw = Math.max(a.width, b?b.width:0);
+      const ph = Math.max(a.height, b?b.height:0);
+      const [SW, SH] = sheetDims(pw, ph);
+      const page = out.addPage([SW, SH]);
+
+      let slots;
+      if(state.layout==="side"){
+        const sw=(SW - m*3)/2, sh=SH - m*2;
+        slots=[[m,m,sw,sh],[m*2+sw,m,sw,sh]];
+      }else{
+        const sw=SW - m*2, sh=(SH - m*3)/2;
+        // top slot is page 1 → higher y in PDF coords
+        slots=[[m,m*2+sh,sw,sh],[m,m,sw,sh]];
+      }
+      placePage(page, a, slots[0]);
+      if(b) placePage(page, b, slots[1]);
+    }
+
+    const bytes = await out.save();
+    const blob = new Blob([bytes], {type:"application/pdf"});
+    const url = URL.createObjectURL(blob);
+    dlLink.href = url;
+    dlLink.download = `${state.name}-2up.pdf`;
+    const sheets = Math.ceil(n/2);
+    rStat.textContent = `${n} pages → ${sheets} sheets`;
+    rSub.textContent = `${state.layout==="side"?"side by side":"stacked"} · ${state.size==="auto"?"source size":state.size.toUpperCase()}`;
+    result.classList.add("show");
+  }catch(err){
+    result.classList.add("show");
+    rStat.textContent = "Couldn't build that one.";
+    rSub.textContent = "";
+    showError(String(err && err.message || err));
+  }finally{
+    goBtn.disabled = false; goBtn.textContent = "Generate 2-up PDF";
+  }
+}
+
+function placePage(page, emb, slot){
+  const [sx, sy, sw, sh] = slot;
+  const scale = Math.min(sw/emb.width, sh/emb.height);
+  const w = emb.width*scale, h = emb.height*scale;
+  const x = sx + (sw - w)/2;
+  const y = sy + (sh - h)/2;
+  page.drawPage(emb, { x, y, xScale: scale, yScale: scale });
+}
+
+function showError(msg){ errBox.textContent = msg; errBox.classList.remove("hidden"); }
+function hideError(){ errBox.classList.add("hidden"); errBox.textContent=""; }
+</script>
+</body>
+</html>
