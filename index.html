@@ -99,6 +99,16 @@
   .dl{display:inline-flex;align-items:center;gap:9px;text-decoration:none;font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:15px;background:var(--ink);color:var(--sheet);padding:12px 18px;border-radius:3px;}
   .dl:hover{background:#000;}
   .err{color:var(--redink);font-family:"Space Mono",monospace;font-size:13px;margin-top:14px;}
+
+  .autosave{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:18px;font-family:"Space Mono",monospace;font-size:12px;letter-spacing:.04em;color:var(--muted);cursor:pointer;user-select:none;}
+  .autosave input{appearance:none;-webkit-appearance:none;margin:0;width:38px;height:22px;border-radius:11px;background:var(--hair);position:relative;cursor:pointer;transition:background .16s ease;flex:none;outline:none;}
+  .autosave input:checked{background:var(--red);}
+  .autosave input::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .16s ease;}
+  .autosave input:checked::after{transform:translateX(16px);}
+  .autosave input:focus-visible{box-shadow:0 0 0 3px rgba(214,67,43,.3);}
+  .saved{font-family:"Space Mono",monospace;font-size:12px;color:var(--redink);margin-top:14px;display:flex;align-items:center;gap:7px;}
+  .saved.hidden{display:none;}
+
   .hidden{display:none;}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
 </style>
@@ -191,6 +201,10 @@
     </div>
   </div>
 
+  <label class="autosave">
+    <span data-i18n="autoLbl"></span>
+    <input type="checkbox" id="autoChk" checked />
+  </label>
   <button class="go" id="goBtn" disabled></button>
 
   <div class="result" id="result">
@@ -200,6 +214,7 @@
       <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1v9M4 7l4 4 4-4M2 14h12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span data-i18n="dlText"></span>
     </a>
+    <div class="saved hidden" id="savedNote"></div>
     <div class="err hidden" id="errBox"></div>
   </div>
 
@@ -232,6 +247,7 @@ const STR = {
   firstLbl:{ms:"Halaman pertama", en:"First page"},
   paired:{ms:"Berpasangan", en:"Paired"},
   cover:{ms:"Kulit penuh", en:"Full cover"},
+  autoLbl:{ms:"Muat turun automatik", en:"Auto-download"},
   outSheet:{ms:"Helaian hasil", en:"Output sheet"},
   dlText:{ms:"Muat turun PDF 2-dalam-1", en:"Download 2-up PDF"},
 };
@@ -243,6 +259,7 @@ const T = {
     sizeWord:s=>s==="auto"?"ikut sumber":s.toUpperCase(),
     srcSize:"saiz sumber",
     coverWord:"kulit penuh",
+    savedNote:"Disimpan ke fail anda",
     resultFmt:(p,sh)=>`${p} halaman → ${sh} helaian`,
     go:{add:"Tambah PDF untuk mula", gen:"Jana PDF 2-dalam-1", work:"Sedang memproses…", noneSel:"Simpan sekurang-kurangnya satu halaman"},
     errNotPdf:"Itu bukan fail PDF. Pilih fail .pdf.",
@@ -257,6 +274,7 @@ const T = {
     sizeWord:s=>s==="auto"?"match source":s.toUpperCase(),
     srcSize:"source size",
     coverWord:"full cover",
+    savedNote:"Saved to your files",
     resultFmt:(p,sh)=>`${p} pages → ${sh} sheets`,
     go:{add:"Add a PDF to start", gen:"Generate 2-up PDF", work:"Working…", noneSel:"Keep at least one page"},
     errNotPdf:"That isn't a PDF. Choose a .pdf file.",
@@ -269,7 +287,7 @@ const T = {
 const state = {
   bytes:null, name:null, pageCount:0, srcW:595, srcH:842,
   layout:"side", size:"auto", gap:0, cover:0, selected:[], renderId:0,
-  lang:"ms", lastResult:null,
+  lang:"ms", lastResult:null, autoSave:true, lastUrl:null,
 };
 const A4=[595.28,841.89], LETTER=[612,792], GAP_PT=[0,14,28];
 
@@ -374,6 +392,7 @@ function setAll(v){
 }
 document.getElementById("selAll").addEventListener("click",()=>setAll(true));
 document.getElementById("selNone").addEventListener("click",()=>setAll(false));
+document.getElementById("autoChk").addEventListener("change",e=>{ state.autoSave=e.target.checked; });
 
 function updateCounts(){
   const sel=getSelected();
@@ -490,20 +509,32 @@ async function generate(){
 
     const sheets=(coverIdx!==null?1:0)+Math.ceil(rest.length/2);
     const bytes=await out.save();
+    if(state.lastUrl) URL.revokeObjectURL(state.lastUrl);
     const url=URL.createObjectURL(new Blob([bytes],{type:"application/pdf"}));
+    state.lastUrl=url;
     dlLink.href=url; dlLink.download=`${state.name}-2up.pdf`;
-    state.lastResult={n:sel.length,sheets,layout:state.layout,size:state.size,cover:coverIdx!==null};
+    state.lastResult={n:sel.length,sheets,layout:state.layout,size:state.size,cover:coverIdx!==null,saved:state.autoSave};
     renderResult(); result.classList.add("show");
+    if(state.autoSave) triggerSave();
   }catch(err){
     state.lastResult=null; result.classList.add("show");
     rStat.textContent=tt().errBuild; rSub.textContent=""; showError(String(err&&err.message||err));
   }finally{ goBtn.disabled=false; goBtn.textContent=tt().go.gen; }
+}
+function triggerSave(){
+  // Programmatically start the download. A fresh anchor avoids any focus side-effects.
+  const a=document.createElement("a");
+  a.href=dlLink.href; a.download=dlLink.download;
+  document.body.appendChild(a); a.click(); a.remove();
 }
 function renderResult(){
   const r=state.lastResult; if(!r) return;
   rStat.textContent=tt().resultFmt(r.n,r.sheets);
   const sizeTxt=r.size==="auto"?tt().srcSize:tt().sizeWord(r.size);
   rSub.textContent=`${tt().layoutWord(r.layout)} · ${sizeTxt}`+(r.cover?` · ${tt().coverWord}`:"");
+  const note=document.getElementById("savedNote");
+  if(r.saved){ note.textContent=`✓ ${tt().savedNote}`; note.classList.remove("hidden"); }
+  else{ note.classList.add("hidden"); }
 }
 function placePage(page,emb,slot){
   const [sx,sy,sw,sh]=slot;
